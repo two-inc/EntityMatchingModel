@@ -42,26 +42,35 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         score_col: str = "nm_score",
         device: str | None = None,
         batch_size: int = 32,
+        model_kwargs: dict[str, Any] | None = None,
+        encode_kwargs: dict[str, Any] | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         """Sentence Transformer implementation for name matching
-
-        SentenceTransformerLayerTransformer is used as an alternative to the supervised model transformer
-        in the pipeline of PandasEntityMatching. It uses pre-trained sentence transformer models to
-        compute semantic similarity between name pairs.
 
         Args:
             model_name: name of the pre-trained sentence transformer model to use
             score_col: name of the column to store similarity scores
             device: device to run the model on ('cpu', 'cuda', or None for auto-detection)
             batch_size: batch size for processing embeddings
+            model_kwargs: optional kwargs passed to SentenceTransformer initialization
+            encode_kwargs: optional kwargs passed to encode() method
             args: ignored
             kwargs: ignored
 
         Examples:
+            >>> # Basic usage
             >>> transformer = SentenceTransformerLayerTransformer(model_name='all-MiniLM-L6-v2')
-            >>> scored_df = transformer.transform(candidates_df)
+            >>> 
+            >>> # With prompt template (for models that support it)
+            >>> transformer = SentenceTransformerLayerTransformer(
+            ...     model_name='dunzhang/stella_en_1.5B_v5',
+            ...     model_kwargs={
+            ...         'prompt_template': "Instruct: Retrieve semantically similar text.\nQuery: {query}",
+            ...         'trust_remote_code': True
+            ...     }
+            ... )
         """
         if not SENTENCE_TRANSFORMERS_AVAILABLE:
             raise ImportError(
@@ -74,9 +83,11 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         self.score_col = score_col
         self.batch_size = batch_size
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model_kwargs = model_kwargs or {}
+        self.encode_kwargs = encode_kwargs or {}
         
-        # Initialize the model
-        self.model = SentenceTransformer(model_name, device=self.device)
+        # Initialize the model with any extra kwargs
+        self.model = SentenceTransformer(model_name, device=self.device, **self.model_kwargs)
         BaseSupervisedModel.__init__(self)
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> SentenceTransformerLayerTransformer:
@@ -111,27 +122,27 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         """
         logger.info(f"Calculating similarity scores using {self.model_name}")
         
-        # Get name pairs to compare
         i_to_score = X["gt_uid"].notna()
         if i_to_score.sum() == 0:
             X[self.score_col] = 0.0
             return X
 
-        # Get the relevant rows
         df_to_score = X[i_to_score]
         
-        # Calculate embeddings in batches
+        # Calculate embeddings in batches with any extra encode kwargs
         name1_embeddings = self.model.encode(
             df_to_score["name"].tolist(),
             batch_size=self.batch_size,
             show_progress_bar=False,
-            convert_to_tensor=True
+            convert_to_tensor=True,
+            **self.encode_kwargs
         )
         name2_embeddings = self.model.encode(
             df_to_score["gt_name"].tolist(),
             batch_size=self.batch_size,
             show_progress_bar=False,
-            convert_to_tensor=True
+            convert_to_tensor=True,
+            **self.encode_kwargs
         )
 
         # Calculate cosine similarities
