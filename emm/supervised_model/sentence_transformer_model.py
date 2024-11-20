@@ -25,6 +25,7 @@ try:
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
+import numpy as np
 
 from emm.loggers import Timer
 from emm.loggers.logger import logger
@@ -42,7 +43,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         model_name: str = "all-MiniLM-L6-v2",
         score_col: str = "nm_score",
         device: str | None = None,
-        batch_size: int = 32,
+        batch_size: int | None = None,
         model_kwargs: dict[str, Any] | None = None,
         encode_kwargs: dict[str, Any] | None = None,
         *args: Any,
@@ -83,7 +84,19 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         self.model_name = model_name
         self.score_col = score_col
         self.batch_size = batch_size
-        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        if device is None:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(device)
+        # Add optimal batch size detection
+        if batch_size is None:
+            if torch.cuda.is_available():
+                # Calculate based on available GPU memory
+                gpu_mem = torch.cuda.get_device_properties(0).total_memory
+                self.batch_size = min(32, gpu_mem // (2**20))  # Conservative estimate
+            else:
+                self.batch_size = 32
+        else:
+            self.batch_size = batch_size
         self.model_kwargs = model_kwargs or {}
         self.encode_kwargs = encode_kwargs or {}
         
@@ -231,16 +244,24 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         Returns:
             Array of shape (n_samples, 2) containing [1-score, score] for each pair
         """
-        # Calculate similarity scores
+        # Handle cases where either name or gt_name is NaN
+        valid_mask = X["name"].notna() & X["gt_name"].notna()
+        n_samples = len(X)
+        
+        if not valid_mask.any():
+            # If no valid pairs, return zero scores
+            return np.zeros((n_samples, 2))
+            
+        # Calculate similarity scores only for valid pairs
         name1_embeddings = self.model.encode(
-            X["name"].tolist(),
+            X.loc[valid_mask, "name"].tolist(),
             batch_size=self.batch_size,
             show_progress_bar=False,
             convert_to_tensor=True,
             **self.encode_kwargs
         )
         name2_embeddings = self.model.encode(
-            X["gt_name"].tolist(),
+            X.loc[valid_mask, "gt_name"].tolist(),
             batch_size=self.batch_size,
             show_progress_bar=False,
             convert_to_tensor=True,
@@ -251,5 +272,12 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         similarities = util.cos_sim(name1_embeddings, name2_embeddings)
         scores = similarities.diagonal().cpu().numpy()
         
-        # Convert to probability array format [1-p, p] that sklearn expects
-        return np.vstack([(1 - scores), scores]).T
+        # Clear GPU memory
+        del name1_embeddings, name2_embeddings, similarities
+        torch.cuda.empty_cache()
+        
+        # Create full results array with zeros for invalid pairs
+        full_scores = np.zeros(n_samples)
+        full_scores[valid_mask] = scores
+        
+        return np.vstack([(1 - full_scores), full_scores]).T
