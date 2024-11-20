@@ -54,7 +54,9 @@ dev = [
   "matplotlib",
   "pygments",
   "pandoc",
-  "pympler"
+  "pympler",
+  "sentence-transformers>=2.2.0",
+  "torch>=1.11.0"
 ]
 test = [
   "pytest",
@@ -93,6 +95,11 @@ doc = [
   "pandoc",
   "jupyter_client>=5.2.3",
   "myst_parser"
+]
+
+transformers = [
+  "sentence-transformers>=2.2.0",
+  "torch>=1.11.0"
 ]
 
 [tool.pytest.ini_options]

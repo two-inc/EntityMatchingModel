@@ -19,8 +19,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping
 import torch
-from sklearn.base import TransformerMixin
-from sentence_transformers import SentenceTransformer, util
+try:
+    from sentence_transformers import SentenceTransformer, util
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 from emm.loggers import Timer
 from emm.loggers.logger import logger
@@ -60,6 +63,13 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
             >>> transformer = SentenceTransformerLayerTransformer(model_name='all-MiniLM-L6-v2')
             >>> scored_df = transformer.transform(candidates_df)
         """
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            raise ImportError(
+                "sentence-transformers is not installed. "
+                "Please install it with `pip install emm[transformers]` "
+                "or `pip install sentence-transformers`"
+            )
+            
         self.model_name = model_name
         self.score_col = score_col
         self.batch_size = batch_size

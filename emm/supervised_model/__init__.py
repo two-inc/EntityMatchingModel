@@ -20,10 +20,15 @@
 from emm.helper import spark_installed
 from emm.supervised_model.base_supervised_model import train_model, train_test_model
 from emm.supervised_model.pandas_supervised_model import PandasSupervisedLayerTransformer
+from emm.supervised_model.sentence_transformer_model import SentenceTransformerLayerTransformer
 
-__all__ = ["train_model", "train_test_model", "PandasSupervisedLayerTransformer"]
+__all__ = [
+    "train_model", 
+    "train_test_model", 
+    "PandasSupervisedLayerTransformer",
+    "SentenceTransformerLayerTransformer"
+]
 
 if spark_installed:
     from emm.supervised_model.spark_supervised_model import SparkSupervisedLayerEstimator
-
     __all__ += ["SparkSupervisedLayerEstimator"]
