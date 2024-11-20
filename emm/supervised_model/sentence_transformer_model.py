@@ -219,3 +219,37 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
 
             timer.log_param("cands", len(X))
         return X 
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Calculate probability scores for name pairs.
+        
+        Implements sklearn classifier interface for compatibility with PandasSupervisedLayerTransformer.
+        
+        Args:
+            X: DataFrame containing name pairs to score
+        
+        Returns:
+            Array of shape (n_samples, 2) containing [1-score, score] for each pair
+        """
+        # Calculate similarity scores
+        name1_embeddings = self.model.encode(
+            X["name"].tolist(),
+            batch_size=self.batch_size,
+            show_progress_bar=False,
+            convert_to_tensor=True,
+            **self.encode_kwargs
+        )
+        name2_embeddings = self.model.encode(
+            X["gt_name"].tolist(),
+            batch_size=self.batch_size,
+            show_progress_bar=False,
+            convert_to_tensor=True,
+            **self.encode_kwargs
+        )
+
+        # Calculate cosine similarities
+        similarities = util.cos_sim(name1_embeddings, name2_embeddings)
+        scores = similarities.diagonal().cpu().numpy()
+        
+        # Convert to probability array format [1-p, p] that sklearn expects
+        return np.vstack([(1 - scores), scores]).T
