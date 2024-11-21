@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Dict
 import torch
 from sklearn.base import TransformerMixin
 try:
@@ -30,49 +30,36 @@ import numpy as np
 from emm.loggers import Timer
 from emm.loggers.logger import logger
 from emm.supervised_model.base_supervised_model import BaseSupervisedModel
+from emm.models.sentence_transformer.base import BaseSentenceTransformerComponent
 
 if TYPE_CHECKING:
     import pandas as pd
 
 
-class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel):
+class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel, BaseSentenceTransformerComponent):
     """Sentence Transformer implementation for name matching"""
 
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",
         score_col: str = "nm_score",
-        device: str | None = None,
-        batch_size: int | None = None,
-        model_kwargs: dict[str, Any] | None = None,
-        encode_kwargs: dict[str, Any] | None = None,
-        *args: Any,
-        **kwargs: Any,
+        model_name: str = "all-MiniLM-L6-v2",
+        device: Optional[str] = None,
+        batch_size: Optional[int] = None,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        encode_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Sentence Transformer implementation for name matching
-
+        """Initialize sentence transformer matcher
+        
         Args:
-            model_name: name of the pre-trained sentence transformer model to use
-            score_col: name of the column to store similarity scores
-            device: device to run the model on ('cpu', 'cuda', or None for auto-detection)
-            batch_size: batch size for processing embeddings
-            model_kwargs: optional kwargs passed to SentenceTransformer initialization
-            encode_kwargs: optional kwargs passed to encode() method
-            args: ignored
-            kwargs: ignored
-
-        Examples:
-            >>> # Basic usage
-            >>> transformer = SentenceTransformerLayerTransformer(model_name='all-MiniLM-L6-v2')
-            >>> 
-            >>> # With prompt template (for models that support it)
-            >>> transformer = SentenceTransformerLayerTransformer(
-            ...     model_name='dunzhang/stella_en_1.5B_v5',
-            ...     model_kwargs={
-            ...         'prompt_template': "Instruct: Retrieve semantically similar text.\nQuery: {query}",
-            ...         'trust_remote_code': True
-            ...     }
-            ... )
+            score_col: Name of column to store similarity scores
+            model_name: Name of pre-trained model or path to fine-tuned model
+                Examples:
+                    - "all-MiniLM-L6-v2"  # Pre-trained
+                    - "path/to/fine_tuned/scorer_model"  # Fine-tuned
+            device: Device to run model on ('cpu', 'cuda', or None for auto)
+            batch_size: Batch size for encoding
+            model_kwargs: Additional kwargs for model initialization
+            encode_kwargs: Additional kwargs for encoding method
         """
         if not SENTENCE_TRANSFORMERS_AVAILABLE:
             raise ImportError(
@@ -81,28 +68,16 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
                 "or `pip install sentence-transformers`"
             )
             
-        self.model_name = model_name
-        self.score_col = score_col
-        self.batch_size = batch_size
-        if device is None:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.device = torch.device(device)
-        # Add optimal batch size detection
-        if batch_size is None:
-            if torch.cuda.is_available():
-                # Calculate based on available GPU memory
-                gpu_mem = torch.cuda.get_device_properties(0).total_memory
-                self.batch_size = min(32, gpu_mem // (2**20))  # Conservative estimate
-            else:
-                self.batch_size = 32
-        else:
-            self.batch_size = batch_size
-        self.model_kwargs = model_kwargs or {}
-        self.encode_kwargs = encode_kwargs or {}
-        
-        # Initialize the model with any extra kwargs
-        self.model = SentenceTransformer(model_name, device=self.device, **self.model_kwargs)
+        BaseSentenceTransformerComponent.__init__(
+            self,
+            model_name=model_name,
+            device=device,
+            batch_size=batch_size,
+            model_kwargs=model_kwargs,
+            encode_kwargs=encode_kwargs
+        )
         BaseSupervisedModel.__init__(self)
+        self.score_col = score_col
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> SentenceTransformerLayerTransformer:
         """Placeholder for fit method - not used as we use pre-trained models
@@ -144,23 +119,11 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
         df_to_score = X[i_to_score]
         
         # Calculate embeddings in batches with any extra encode kwargs
-        name1_embeddings = self.model.encode(
-            df_to_score["name"].tolist(),
-            batch_size=self.batch_size,
-            show_progress_bar=False,
-            convert_to_tensor=True,
-            **self.encode_kwargs
-        )
-        name2_embeddings = self.model.encode(
-            df_to_score["gt_name"].tolist(),
-            batch_size=self.batch_size,
-            show_progress_bar=False,
-            convert_to_tensor=True,
-            **self.encode_kwargs
-        )
+        name1_embeddings = self.encode_texts(df_to_score["name"].tolist())
+        name2_embeddings = self.encode_texts(df_to_score["gt_name"].tolist())
 
         # Calculate cosine similarities
-        similarities = util.cos_sim(name1_embeddings, name2_embeddings)
+        similarities = self.calculate_cosine_similarity(name1_embeddings, name2_embeddings)
         
         # Convert to numpy and flatten
         scores = similarities.diagonal().cpu().numpy()
@@ -253,23 +216,11 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel)
             return np.zeros((n_samples, 2))
             
         # Calculate similarity scores only for valid pairs
-        name1_embeddings = self.model.encode(
-            X.loc[valid_mask, "name"].tolist(),
-            batch_size=self.batch_size,
-            show_progress_bar=False,
-            convert_to_tensor=True,
-            **self.encode_kwargs
-        )
-        name2_embeddings = self.model.encode(
-            X.loc[valid_mask, "gt_name"].tolist(),
-            batch_size=self.batch_size,
-            show_progress_bar=False,
-            convert_to_tensor=True,
-            **self.encode_kwargs
-        )
+        name1_embeddings = self.encode_texts(X.loc[valid_mask, "name"].tolist())
+        name2_embeddings = self.encode_texts(X.loc[valid_mask, "gt_name"].tolist())
 
         # Calculate cosine similarities
-        similarities = util.cos_sim(name1_embeddings, name2_embeddings)
+        similarities = self.calculate_cosine_similarity(name1_embeddings, name2_embeddings)
         scores = similarities.diagonal().cpu().numpy()
         
         # Clear GPU memory

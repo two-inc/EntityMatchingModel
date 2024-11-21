@@ -44,6 +44,17 @@ MODEL_PARAMS = {
             "type": "sni",  # Sorted Neighbourhood Indexing,
             "window_length": 3,
         },
+        # Sentence transformer indexer
+        {
+            "type": "sentence_transformer",
+            "model_name": "all-MiniLM-L6-v2",
+            "num_candidates": 10,
+            "cos_sim_lower_bound": 0.5,
+            "device": None,
+            "batch_size": None,
+            "model_kwargs": None,
+            "encode_kwargs": None,
+        },
     ],
     "partition_size": 5000,  # Number of names in ground_truth and names_to_match per Spark partition: across-worker division. (Set to None for no automatic repartitioning)
     # input columns:
@@ -92,6 +103,17 @@ DEFAULT_INDEXER_PARAMS = {
         "mapping_func": None,  # custom mapping function applied in SNI step
     },
     "naive": {},
+    "sentence_transformer": {
+        "model_name": "all-MiniLM-L6-v2",  # Default lightweight model or path to fine-tuned model
+        "num_candidates": 10,  # Number of candidates returned by indexer
+        "cos_sim_lower_bound": 0.5,  # Minimum similarity threshold
+        "batch_size": None,  # Will use auto-detection
+        "device": None,  # Auto-detect device
+        "blocking_func": None,  # Optional blocking function
+        "input_col": "preprocessed",  # Input column name
+        "model_kwargs": None,  # Optional kwargs for model initialization
+        "encode_kwargs": None,  # Optional kwargs for encoding
+    },
 }
 
 # list of column names that should always be copied to the dataframe with candidates if present
