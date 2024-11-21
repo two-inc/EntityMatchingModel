@@ -31,6 +31,7 @@ from emm.loggers import Timer
 from emm.loggers.logger import logger
 from emm.supervised_model.base_supervised_model import BaseSupervisedModel
 from emm.models.sentence_transformer.base import BaseSentenceTransformerComponent
+from emm.models.sentence_transformer.utils import check_sentence_transformers_available
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -61,12 +62,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
             model_kwargs: Additional kwargs for model initialization
             encode_kwargs: Additional kwargs for encoding method
         """
-        if not SENTENCE_TRANSFORMERS_AVAILABLE:
-            raise ImportError(
-                "sentence-transformers is not installed. "
-                "Please install it with `pip install emm[transformers]` "
-                "or `pip install sentence-transformers`"
-            )
+        check_sentence_transformers_available()
             
         BaseSentenceTransformerComponent.__init__(
             self,
@@ -197,16 +193,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
         return X 
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Calculate probability scores for name pairs.
-        
-        Implements sklearn classifier interface for compatibility with PandasSupervisedLayerTransformer.
-        
-        Args:
-            X: DataFrame containing name pairs to score
-        
-        Returns:
-            Array of shape (n_samples, 2) containing [1-score, score] for each pair
-        """
+        """Calculate probability scores for name pairs."""
         # Handle cases where either name or gt_name is NaN
         valid_mask = X["name"].notna() & X["gt_name"].notna()
         n_samples = len(X)
@@ -220,7 +207,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
         name2_embeddings = self.encode_texts(X.loc[valid_mask, "gt_name"].tolist())
 
         # Calculate cosine similarities
-        similarities = self.calculate_cosine_similarity(name1_embeddings, name2_embeddings)
+        similarities = util.cos_sim(name1_embeddings, name2_embeddings)
         scores = similarities.diagonal().cpu().numpy()
         
         # Clear GPU memory

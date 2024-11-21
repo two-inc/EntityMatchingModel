@@ -10,6 +10,7 @@ from emm.helper.blocking_functions import _parse_blocking_func
 from emm.loggers import Timer
 from emm.loggers.logger import logger
 from emm.models.sentence_transformer.base import BaseSentenceTransformerComponent
+from emm.models.sentence_transformer.utils import check_sentence_transformers_available
 
 class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, BaseSentenceTransformerComponent):
     """Indexer using lightweight sentence transformers for initial candidate selection"""
@@ -31,12 +32,14 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
             model_name: Name of pre-trained model or path to fine-tuned model
                 Examples:
                     - "all-MiniLM-L6-v2"  # Pre-trained
-                    - "path/to/fine_tuned/indexer_model"  # Fine-tuned
+                    - "mixedbread-ai/mxbai-embed-xsmall-v1"  # With truncate_dim in model_kwargs
             device: Device to run model on ('cpu', 'cuda', or None for auto)
             batch_size: Batch size for encoding
-            model_kwargs: Additional kwargs for model initialization
+            model_kwargs: Additional kwargs for model initialization (e.g. {'truncate_dim': 384})
             encode_kwargs: Additional kwargs for encoding method
+            **kwargs: Additional indexer parameters
         """
+        check_sentence_transformers_available()
         BaseSentenceTransformerComponent.__init__(
             self,
             model_name=model_name,
@@ -54,8 +57,8 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
         )
         self.base_embeddings = None
         self.base_indices = None
-        self.gt = None  # Store ground truth like other indexers
-        logger.info(f"Initializing SentenceTransformerIndexer with model {kwargs.get('model_name_or_path')}")
+        self.gt = None
+        logger.info(f"Initializing SentenceTransformerIndexer with model {model_name}")
         self.carry_on_cols = []
 
     def fit(self, X: pd.DataFrame, y: Any = None) -> TransformerMixin:
@@ -106,83 +109,91 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
             return self
 
     def transform(self, X: pd.DataFrame, multiple_indexers: bool = False) -> pd.DataFrame:
-        """Find nearest neighbors for query names
-        
-        Args:
-            X: DataFrame containing names to match
-            multiple_indexers: Whether multiple indexers are being used
-            
-        Returns:
-            DataFrame with candidate matches and scores
-        """
+        """Find nearest neighbors for query names"""
         if self.gt is None:
             msg = "Model is not fitted yet"
             raise ValueError(msg)
             
-        with Timer("SentenceTransformerIndexer.transform") as timer:
-            logger.info(f"Transforming {len(X)} records")
-            
-            results = []
-            
-            if self.blocking_func is not None:
-                blocks = X[self.input_col].map(self.blocking_func)
-                for block in blocks.unique():
-                    if block not in self.base_embeddings:
-                        continue
+        try:
+            with Timer("SentenceTransformerIndexer.transform") as timer:
+                logger.info(f"Transforming {len(X)} records")
+                
+                results = []
+                
+                if self.blocking_func is not None:
+                    blocks = X[self.input_col].map(self.blocking_func)
+                    for block in blocks.unique():
+                        if block not in self.base_embeddings:
+                            continue
+                            
+                        block_embeddings = self.encode_texts(
+                            X[blocks == block][self.input_col].tolist(),
+                        )
                         
-                    block_embeddings = self.encode_texts(
-                        X[blocks == block][self.input_col].tolist(),
+                        distances, indices = self.nn.kneighbors(block_embeddings)
+                        similarities = 1 - distances
+                        
+                        block_results = self._process_matches(
+                            similarities,
+                            indices,
+                            X[blocks == block].index,
+                            self.base_indices[block]
+                        )
+                        results.extend(block_results)
+                        
+                        # Clean up memory after each block
+                        del block_embeddings
+                        if self.device.type == 'cuda':
+                            torch.cuda.empty_cache()
+                else:
+                    query_embeddings = self.encode_texts(
+                        X[self.input_col].tolist(),
                     )
                     
-                    distances, indices = self.nn.kneighbors(block_embeddings)
+                    distances, indices = self.nn.kneighbors(query_embeddings)
                     similarities = 1 - distances
                     
-                    block_results = self._process_matches(
+                    results = self._process_matches(
                         similarities,
                         indices,
-                        X[blocks == block].index,
-                        self.base_indices[block]
+                        X.index,
+                        self.base_indices
                     )
-                    results.extend(block_results)
-            else:
-                query_embeddings = self.encode_texts(
-                    X[self.input_col].tolist(),
-                )
-                
-                distances, indices = self.nn.kneighbors(query_embeddings)
-                similarities = 1 - distances
-                
-                results = self._process_matches(
-                    similarities,
-                    indices,
-                    X.index,
-                    self.base_indices
-                )
                     
-            candidates = pd.DataFrame(results)
-            if len(candidates) == 0:
-                candidates = pd.DataFrame(columns=['uid', 'gt_uid', 'score', 'rank'])
+                    # Clean up memory
+                    del query_embeddings
+                    if self.device.type == 'cuda':
+                        torch.cuda.empty_cache()
+                    
+                candidates = pd.DataFrame(results)
+                if len(candidates) == 0:
+                    candidates = pd.DataFrame(columns=['uid', 'gt_uid', 'score', 'rank'])
+                    
+                # Sort and rank within groups like other indexers
+                candidates = candidates.sort_values(['uid', 'score'], ascending=[True, False])
+                gb = candidates.groupby('uid')
+                candidates['rank'] = gb['score'].transform(lambda x: range(1, len(x) + 1))
                 
-            # Sort and rank within groups like other indexers
-            candidates = candidates.sort_values(['uid', 'score'], ascending=[True, False])
-            gb = candidates.groupby('uid')
-            candidates['rank'] = gb['score'].transform(lambda x: range(1, len(x) + 1))
-            
-            if multiple_indexers:
-                candidates[self.column_prefix()] = 1
+                if multiple_indexers:
+                    candidates[self.column_prefix()] = 1
+                    
+                if self.carry_on_cols:
+                    for col in self.carry_on_cols:
+                        if col in X.columns:
+                            candidates[col] = X[col]
+                            
+                candidates = candidates.rename(columns={
+                    'score': f'score_{self.column_prefix()}',
+                    'rank': f'rank_{self.column_prefix()}'
+                })
                 
-            if self.carry_on_cols:
-                for col in self.carry_on_cols:
-                    if col in X.columns:
-                        candidates[col] = X[col]
-                        
-            candidates = candidates.rename(columns={
-                'score': f'score_{self.column_prefix()}',
-                'rank': f'rank_{self.column_prefix()}'
-            })
-            
-            logger.info(f"Generated {len(candidates)} candidates")
-            return candidates
+                logger.info(f"Generated {len(candidates)} candidates")
+                return candidates
+
+        finally:
+            # Ensure memory is cleaned up even if an error occurs
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
 
     def _process_matches(self, similarities, indices, query_indices, base_indices):
         """Process matches and filter by similarity threshold"""

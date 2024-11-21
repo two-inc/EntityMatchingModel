@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import List, Dict, Optional, Union, Any
 import torch
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, util
 from numpy.typing import NDArray
+from emm.models.sentence_transformer.utils import check_sentence_transformers_available
 
 class BaseSentenceTransformerComponent:
     """Base component for sentence transformer functionality in EMM.
@@ -42,14 +43,16 @@ class BaseSentenceTransformerComponent:
             >>> # Basic usage
             >>> base = BaseSentenceTransformerComponent()
             >>> 
-            >>> # With custom settings
+            >>> # With custom settings including dimension truncation
             >>> base = BaseSentenceTransformerComponent(
-            ...     model_name='all-mpnet-base-v2',
+            ...     model_name='mixedbread-ai/mxbai-embed-xsmall-v1',
             ...     device='cuda',
             ...     batch_size=64,
-            ...     model_kwargs={'trust_remote_code': True}
+            ...     model_kwargs={'truncate_dim': 384}
             ... )
         """
+        check_sentence_transformers_available()
+        
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.device = torch.device(device)
@@ -114,10 +117,23 @@ class BaseSentenceTransformerComponent:
             raise ValueError(
                 f"Embedding shapes must match: {embeddings1.shape} != {embeddings2.shape}"
             )
-            
-        return np.sum(embeddings1 * embeddings2, axis=1) / (
-            np.linalg.norm(embeddings1, axis=1) * np.linalg.norm(embeddings2, axis=1)
-        )
+        
+        # Convert to PyTorch tensors and move to correct device
+        emb1 = torch.from_numpy(embeddings1).to(self.device)
+        emb2 = torch.from_numpy(embeddings2).to(self.device)
+        
+        try:
+            # Use sentence-transformers built-in cosine similarity
+            similarities = util.cos_sim(emb1, emb2)
+            # Extract diagonal for pairwise similarities
+            result = similarities.diagonal().cpu().numpy()
+            return result
+        
+        finally:
+            # Clean up GPU memory
+            if self.device.type == 'cuda':
+                del emb1, emb2, similarities
+                torch.cuda.empty_cache()
 
     def clear_gpu_memory(self) -> None:
         """Clear GPU memory cache if using CUDA device."""
