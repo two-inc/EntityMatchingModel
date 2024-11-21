@@ -36,6 +36,7 @@ from emm.indexing.pandas_candidate_selection import PandasCandidateSelectionTran
 from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
+from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
 from emm.loggers import Timer
 from emm.loggers.logger import logger
 from emm.parameters import DEFAULT_CARRY_ON_COLS, MODEL_PARAMS
@@ -140,6 +141,7 @@ class PandasEntityMatching(BaseEntityMatching):
             "cosine_similarity": PandasCosSimIndexer,
             "sni": PandasSortedNeighbourhoodIndexer,
             "naive": PandasNaiveIndexer,
+            "sentence_transformer": PandasSentenceTransformerIndexer,
         }
         DEFAULT_INDEXER_PARAMS_PANDAS = {
             "cosine_similarity": {
@@ -149,6 +151,13 @@ class PandasEntityMatching(BaseEntityMatching):
             },
             "sni": {"input_col": "preprocessed"},
             "naive": {},
+            "sentence_transformer": {
+                "input_col": "preprocessed",
+                "model_name": "all-MiniLM-L6-v2",
+                "num_candidates": 10,
+                "cos_sim_lower_bound": 0.5,
+                "batch_size": 32
+            }
         }
         if "indexers" in params:
             indexers_definition = params["indexers"]
