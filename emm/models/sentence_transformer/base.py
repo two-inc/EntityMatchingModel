@@ -12,8 +12,6 @@ except ImportError:
     from typing import Any
     NDArray = Any
 
-from emm.models.sentence_transformer.utils import check_sentence_transformers_available
-
 class BaseSentenceTransformerComponent:
     """Base component for sentence transformer functionality in EMM.
     
@@ -58,8 +56,6 @@ class BaseSentenceTransformerComponent:
             ...     model_kwargs={'truncate_dim': 384}
             ... )
         """
-        check_sentence_transformers_available()
-        
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.device = torch.device(device)

@@ -17,27 +17,27 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+from __future__ import annotations
+
+# Core functionality - always available
 from emm.supervised_model.base_supervised_model import BaseSupervisedModel
 from emm.supervised_model.cos_sim_model import CosSimModel
 from emm.supervised_model.xgboost_model import XGBoostModel
 
+__all__ = [
+    # Core models
+    "BaseSupervisedModel",
+    "CosSimModel", 
+    "XGBoostModel",
+]
+
+# Optional Sentence Transformer support
 try:
     from sentence_transformers import SentenceTransformer
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    SENTENCE_TRANSFORMERS_AVAILABLE = False
-
-if SENTENCE_TRANSFORMERS_AVAILABLE:
     from emm.supervised_model.sentence_transformer_model import SentenceTransformerLayerTransformer
-    __all__ = [
-        "BaseSupervisedModel",
-        "CosSimModel",
-        "XGBoostModel",
+    __all__.extend([
+        # Sentence transformer models
         "SentenceTransformerLayerTransformer"
-    ]
-else:
-    __all__ = [
-        "BaseSupervisedModel",
-        "CosSimModel",
-        "XGBoostModel"
-    ]
+    ])
+except ImportError:
+    pass

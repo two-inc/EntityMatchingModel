@@ -1,17 +1,8 @@
+from __future__ import annotations
+
 from typing import Optional, Dict, Any, List
-try:
-    import lightning as L
-    LIGHTNING_AVAILABLE = True
-except ImportError:
-    LIGHTNING_AVAILABLE = False
-
-if not LIGHTNING_AVAILABLE:
-    raise ImportError(
-        "Lightning is not installed. "
-        "Please install it with `pip install emm[tuning]` "
-        "to use the tuning functionality."
-    )
-
+import logging
+import lightning as L
 from sentence_transformers import SentenceTransformer, losses
 import torch
 import wandb
@@ -19,6 +10,8 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 
 from emm.models.sentence_transformer.tuning.config import TuningConfig
+
+logger = logging.getLogger(__name__)
 
 class SentenceTransformerTuner:
     """Fine-tuning for sentence transformers specialized for company name matching"""
@@ -77,11 +70,11 @@ class SentenceTransformerTuner:
     def train(self) -> None:
         """Execute training loop"""
         if self.config.wandb_project and self.fabric.is_global_zero:
-            if not WANDB_AVAILABLE:
-                logger.warning("W&B logging requested but wandb not installed. Install with pip install emm[tuning]")
-            else:
+            try:
                 wandb.init(project=self.config.wandb_project)
-            
+            except Exception as e:
+                logger.warning(f"Failed to initialize W&B logging: {e}")
+                
         self.fabric.launch()
         
         for epoch in range(self.config.num_epochs):

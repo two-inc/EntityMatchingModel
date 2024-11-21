@@ -98,12 +98,11 @@ doc = [
 ]
 
 transformers = [
-  "sentence-transformers>=2.2.0",
-  "torch>=1.11.0"
+  "sentence-transformers",
 ]
 
 tuning = [
-  "lightning>=2.0.0",
+  "lightning",
   "wandb"
 ]
 

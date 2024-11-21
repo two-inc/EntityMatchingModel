@@ -17,27 +17,54 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+"""Entity matching indexers for candidate pair generation.
+
+Core indexers:
+- PandasCosSimIndexer: Cosine similarity based indexing
+- PandasNaiveIndexer: Simple O(n^2) indexing for small datasets
+- PandasSortedNeighbourhoodIndexer: Sorted neighborhood indexing
+
+Optional indexers (require additional dependencies):
+- Spark indexers (requires pyspark):
+  - SparkCosSimIndexer
+  - SparkCandidateSelectionEstimator
+  - SparkSortedNeighbourhoodIndexer
+- Sentence Transformer indexers (requires sentence-transformers):
+  - PandasSentenceTransformerIndexer
+"""
+
+from __future__ import annotations
+
 from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
 
-try:
-    from sentence_transformers import SentenceTransformer
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    SENTENCE_TRANSFORMERS_AVAILABLE = False
+__all__ = [
+    "PandasCosSimIndexer", 
+    "PandasNaiveIndexer", 
+    "PandasSortedNeighbourhoodIndexer",
+]
 
-if SENTENCE_TRANSFORMERS_AVAILABLE:
+# Optional Spark support
+try:
+    import pyspark
+    from emm.indexing.spark_cos_sim_matcher import SparkCosSimIndexer
+    from emm.indexing.spark_candidate_selection import SparkCandidateSelectionEstimator
+    from emm.indexing.spark_sni import SparkSortedNeighbourhoodIndexer
+    __all__.extend([
+        "SparkCosSimIndexer",
+        "SparkCandidateSelectionEstimator", 
+        "SparkSortedNeighbourhoodIndexer"
+    ])
+except ImportError:
+    pass
+
+# Optional Sentence Transformer support 
+try:
+    import sentence_transformers
     from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
-    __all__ = [
-        "PandasCosSimIndexer",
-        "PandasNaiveIndexer",
-        "PandasSortedNeighbourhoodIndexer",
+    __all__.extend([
         "PandasSentenceTransformerIndexer"
-    ]
-else:
-    __all__ = [
-        "PandasCosSimIndexer",
-        "PandasNaiveIndexer",
-        "PandasSortedNeighbourhoodIndexer"
-    ]
+    ])
+except ImportError:
+    pass
