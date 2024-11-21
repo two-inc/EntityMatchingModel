@@ -4,7 +4,14 @@ from typing import List, Dict, Optional, Union, Any
 import torch
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
-from numpy.typing import NDArray
+
+# Single numpy typing import with fallback
+try:
+    from numpy.typing import NDArray
+except ImportError:
+    from typing import Any
+    NDArray = Any
+
 from emm.models.sentence_transformer.utils import check_sentence_transformers_available
 
 class BaseSentenceTransformerComponent:

@@ -102,6 +102,11 @@ transformers = [
   "torch>=1.11.0"
 ]
 
+tuning = [
+  "lightning>=2.0.0",
+  "wandb"
+]
+
 [tool.pytest.ini_options]
 filterwarnings = [
   # DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.

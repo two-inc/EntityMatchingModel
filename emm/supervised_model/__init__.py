@@ -17,18 +17,27 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from emm.helper import spark_installed
-from emm.supervised_model.base_supervised_model import train_model, train_test_model
-from emm.supervised_model.pandas_supervised_model import PandasSupervisedLayerTransformer
-from emm.supervised_model.sentence_transformer_model import SentenceTransformerLayerTransformer
+from emm.supervised_model.base_supervised_model import BaseSupervisedModel
+from emm.supervised_model.cos_sim_model import CosSimModel
+from emm.supervised_model.xgboost_model import XGBoostModel
 
-__all__ = [
-    "train_model", 
-    "train_test_model", 
-    "PandasSupervisedLayerTransformer",
-    "SentenceTransformerLayerTransformer"
-]
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
-if spark_installed:
-    from emm.supervised_model.spark_supervised_model import SparkSupervisedLayerEstimator
-    __all__ += ["SparkSupervisedLayerEstimator"]
+if SENTENCE_TRANSFORMERS_AVAILABLE:
+    from emm.supervised_model.sentence_transformer_model import SentenceTransformerLayerTransformer
+    __all__ = [
+        "BaseSupervisedModel",
+        "CosSimModel",
+        "XGBoostModel",
+        "SentenceTransformerLayerTransformer"
+    ]
+else:
+    __all__ = [
+        "BaseSupervisedModel",
+        "CosSimModel",
+        "XGBoostModel"
+    ]

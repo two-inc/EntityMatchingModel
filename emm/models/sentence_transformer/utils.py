@@ -8,4 +8,17 @@ def check_sentence_transformers_available():
             "sentence-transformers is not installed. "
             "Please install it with `pip install emm[transformers]` "
             "or `pip install sentence-transformers`"
+        )
+
+def check_tuning_available():
+    """Check if tuning dependencies are available."""
+    try:
+        import lightning
+        import wandb
+        return True
+    except ImportError:
+        raise ImportError(
+            "Tuning dependencies are not installed. "
+            "Please install them with `pip install emm[tuning]` "
+            "to use the tuning functionality."
         ) 

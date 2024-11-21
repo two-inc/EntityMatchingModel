@@ -17,21 +17,27 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from emm.helper import spark_installed
 from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
-from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
 
-__all__ = [
-    "PandasCosSimIndexer", 
-    "PandasNaiveIndexer", 
-    "PandasSortedNeighbourhoodIndexer",
-    "PandasSentenceTransformerIndexer"
-]
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
-if spark_installed:
-    from emm.indexing.spark_cos_sim_matcher import SparkCosSimIndexer
-    from emm.indexing.spark_sni import SparkSortedNeighbourhoodIndexer
-
-    __all__ += ["SparkCosSimIndexer", "SparkSortedNeighbourhoodIndexer"]
+if SENTENCE_TRANSFORMERS_AVAILABLE:
+    from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+    __all__ = [
+        "PandasCosSimIndexer",
+        "PandasNaiveIndexer",
+        "PandasSortedNeighbourhoodIndexer",
+        "PandasSentenceTransformerIndexer"
+    ]
+else:
+    __all__ = [
+        "PandasCosSimIndexer",
+        "PandasNaiveIndexer",
+        "PandasSortedNeighbourhoodIndexer"
+    ]

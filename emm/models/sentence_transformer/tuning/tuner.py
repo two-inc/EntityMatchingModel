@@ -1,5 +1,17 @@
 from typing import Optional, Dict, Any, List
-import lightning as L
+try:
+    import lightning as L
+    LIGHTNING_AVAILABLE = True
+except ImportError:
+    LIGHTNING_AVAILABLE = False
+
+if not LIGHTNING_AVAILABLE:
+    raise ImportError(
+        "Lightning is not installed. "
+        "Please install it with `pip install emm[tuning]` "
+        "to use the tuning functionality."
+    )
+
 from sentence_transformers import SentenceTransformer, losses
 import torch
 import wandb
@@ -65,7 +77,10 @@ class SentenceTransformerTuner:
     def train(self) -> None:
         """Execute training loop"""
         if self.config.wandb_project and self.fabric.is_global_zero:
-            wandb.init(project=self.config.wandb_project)
+            if not WANDB_AVAILABLE:
+                logger.warning("W&B logging requested but wandb not installed. Install with pip install emm[tuning]")
+            else:
+                wandb.init(project=self.config.wandb_project)
             
         self.fabric.launch()
         
