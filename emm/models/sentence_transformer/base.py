@@ -30,6 +30,7 @@ class BaseSentenceTransformerComponent:
     def __init__(
         self,
         model_name: str = "all-MiniLM-L6-v2",
+        similarity_threshold: float = 0.5,
         device: Optional[str] = None,
         batch_size: Optional[int] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
@@ -39,6 +40,7 @@ class BaseSentenceTransformerComponent:
         
         Args:
             model_name: Name or path of the sentence transformer model to use
+            similarity_threshold: Similarity threshold for filtering candidates
             device: Device to run model on ('cpu', 'cuda', or None for auto-detection)
             batch_size: Batch size for encoding (None for auto-detection)
             model_kwargs: Additional kwargs passed to SentenceTransformer initialization
@@ -74,6 +76,7 @@ class BaseSentenceTransformerComponent:
         self.encode_kwargs = encode_kwargs or {}
         self.model = SentenceTransformer(model_name, device=self.device, **self.model_kwargs)
         self.model_name = model_name
+        self.similarity_threshold = similarity_threshold
 
     def encode_texts(self, texts: List[str]) -> NDArray[np.float32]:
         """Encode a list of texts into embeddings.

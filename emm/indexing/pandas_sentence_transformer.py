@@ -23,6 +23,7 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
         batch_size: Optional[int] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         encode_kwargs: Optional[Dict[str, Any]] = None,
+        similarity_threshold: float = 0.5,
         **kwargs,
     ) -> None:
         """Initialize sentence transformer indexer
@@ -37,6 +38,7 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
             batch_size: Batch size for encoding
             model_kwargs: Additional kwargs for model initialization (e.g. {'truncate_dim': 384})
             encode_kwargs: Additional kwargs for encoding method
+            similarity_threshold: Similarity threshold for filtering matches
             **kwargs: Additional indexer parameters
         """
         check_sentence_transformers_available()
@@ -60,6 +62,7 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
         self.gt = None
         logger.info(f"Initializing SentenceTransformerIndexer with model {model_name}")
         self.carry_on_cols = []
+        self.similarity_threshold = similarity_threshold
 
     def fit(self, X: pd.DataFrame, y: Any = None) -> TransformerMixin:
         """Compute embeddings for base names and fit nearest neighbors
@@ -187,6 +190,8 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
                     'rank': f'rank_{self.column_prefix()}'
                 })
                 
+                candidates = candidates[candidates["similarity_score"] >= self.similarity_threshold]
+                
                 logger.info(f"Generated {len(candidates)} candidates")
                 return candidates
 
@@ -198,7 +203,7 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
     def _process_matches(self, similarities, indices, query_indices, base_indices):
         """Process matches and filter by similarity threshold"""
         results = []
-        mask = similarities >= self.cos_sim_lower_bound
+        mask = similarities >= self.similarity_threshold
         
         for i, (sim_row, idx_row, mask_row) in enumerate(zip(similarities, indices, mask)):
             valid_indices = idx_row[mask_row]

@@ -17,6 +17,7 @@ class TuningConfig:
         wandb_project: Optional W&B project for logging
         loss_type: Type of loss function ('dae', 'contrastive', 'combined')
         device_count: Number of devices to use
+        similarity_threshold: Similarity threshold for filtering candidates
     """
     model_name: str = 'all-MiniLM-L6-v2'
     batch_size: int = 32
@@ -27,4 +28,5 @@ class TuningConfig:
     output_path: Optional[Path] = None
     wandb_project: Optional[str] = None
     loss_type: str = 'dae'  # 'dae', 'contrastive', or 'combined'
-    device_count: int = 1 
+    device_count: int = 1
+    similarity_threshold: float = 0.5

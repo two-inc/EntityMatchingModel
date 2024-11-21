@@ -27,6 +27,25 @@ from emm.helper import blocking_functions, util
 
 ROOT_DIRECTORY = Path(__file__).resolve().parent.parent
 
+# Common sentence transformer settings for reuse
+SENTENCE_TRANSFORMER_BASE = {
+    "type": "sentence_transformer",
+    "model_name": "all-MiniLM-L6-v2",  # Default lightweight model
+    "num_candidates": 10,
+    "similarity_threshold": 0.5,  # Renamed from cos_sim_lower_bound for clarity
+    "device": None,  # Auto-detect CUDA/CPU
+    "batch_size": None,  # Auto-detect based on available memory
+    "input_col": "preprocessed",
+    # Support for model-specific parameters as shown in mixedbread example
+    "model_kwargs": {
+        "normalize_embeddings": True,
+        # Other model-specific params like truncate_dim can be added here
+    },
+    "encode_kwargs": {
+        "normalize_embeddings": True,
+    },
+}
+
 # default model parameters picked up in PandasEntityMatching and SparkEntityMatching
 MODEL_PARAMS = {
     # type of name preprocessor defined in name_preprocessing.py
@@ -44,17 +63,8 @@ MODEL_PARAMS = {
             "type": "sni",  # Sorted Neighbourhood Indexing,
             "window_length": 3,
         },
-        # Sentence transformer indexer
-        {
-            "type": "sentence_transformer",
-            "model_name": "all-MiniLM-L6-v2",
-            "num_candidates": 10,
-            "cos_sim_lower_bound": 0.5,
-            "device": None,
-            "batch_size": None,
-            "model_kwargs": None,
-            "encode_kwargs": None,
-        },
+        # Sentence transformer indexer with base settings
+        SENTENCE_TRANSFORMER_BASE,
     ],
     "partition_size": 5000,  # Number of names in ground_truth and names_to_match per Spark partition: across-worker division. (Set to None for no automatic repartitioning)
     # input columns:
@@ -88,31 +98,20 @@ DEFAULT_INDEXER_PARAMS = {
     "cosine_similarity": {
         "tokenizer": "words",  # "words" or "characters"
         "ngram": 1,  # number of token per n-gram
-        "cos_sim_lower_bound": 0.0,
-        "num_candidates": 10,  # Number of candidates returned by indexer.
-        "binary_countvectorizer": True,  # use binary countVectorizer or not
-        # the same value as is used in Spark pipeline in CountVectorizer(vocabSize) 2**25=33554432, 2**24=16777216
+        "similarity_threshold": 0.0,  # Renamed from cos_sim_lower_bound for consistency
+        "num_candidates": 10,
+        "binary_countvectorizer": True,
         "max_features": 2**25,
-        # Python function to be used in blocking ground_truth & names_to_match (only pairs within the same block will be considered in cosine similarity)
-        # - None   # No Blocking
-        # - blocking_functions.first()  # block using first character
         "blocking_func": None,
     },
     "sni": {
-        "window_length": 3,  # window size for SNI
-        "mapping_func": None,  # custom mapping function applied in SNI step
+        "window_length": 3,
+        "mapping_func": None,
     },
     "naive": {},
     "sentence_transformer": {
-        "model_name": "all-MiniLM-L6-v2",  # Default lightweight model or path to fine-tuned model
-        "num_candidates": 10,  # Number of candidates returned by indexer
-        "cos_sim_lower_bound": 0.5,  # Minimum similarity threshold
-        "batch_size": None,  # Will use auto-detection
-        "device": None,  # Auto-detect device
-        "blocking_func": None,  # Optional blocking function
-        "input_col": "preprocessed",  # Input column name
-        "model_kwargs": None,  # Optional kwargs for model initialization
-        "encode_kwargs": None,  # Optional kwargs for encoding
+        **SENTENCE_TRANSFORMER_BASE,
+        "blocking_func": None,  # Additional parameter specific to indexer
     },
 }
 

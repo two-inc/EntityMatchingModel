@@ -44,6 +44,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
         self,
         score_col: str = "nm_score",
         model_name: str = "all-MiniLM-L6-v2",
+        similarity_threshold: float = 0.5,
         device: Optional[str] = None,
         batch_size: Optional[int] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
@@ -74,6 +75,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
         )
         BaseSupervisedModel.__init__(self)
         self.score_col = score_col
+        self.similarity_threshold = similarity_threshold
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> SentenceTransformerLayerTransformer:
         """Placeholder for fit method - not used as we use pre-trained models
@@ -187,6 +189,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
             })
             
             X = self.calc_score(X)
+            X = X[X[self.score_col] >= self.similarity_threshold]
             X = self.select_best_score(X, group_cols=["uid"])
 
             timer.log_param("cands", len(X))
