@@ -24,7 +24,7 @@ Core indexers:
 - PandasNaiveIndexer: Simple O(n^2) indexing for small datasets
 - PandasSortedNeighbourhoodIndexer: Sorted neighborhood indexing
 
-Optional indexers (require additional dependencies):
+Optional indexers:
 - Spark indexers (requires pyspark):
   - SparkCosSimIndexer
   - SparkCandidateSelectionEstimator
@@ -35,28 +35,33 @@ Optional indexers (require additional dependencies):
 
 from __future__ import annotations
 
+# Core indexers
 from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
 
 __all__ = [
-    "PandasCosSimIndexer", 
+    "PandasCosSimIndexer",
     "PandasNaiveIndexer", 
-    "PandasSortedNeighbourhoodIndexer",
+    "PandasSortedNeighbourhoodIndexer"
 ]
 
-# Feature detection for sentence transformers
-HAS_SENTENCE_TRANSFORMER = False
+# Optional sentence transformer support
 try:
-    import sentence_transformers
-    HAS_SENTENCE_TRANSFORMER = True
+    from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+    __all__.append("PandasSentenceTransformerIndexer")
 except ImportError:
     pass
 
-# Only import if dependencies are available
-if HAS_SENTENCE_TRANSFORMER:
-    try:
-        from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
-        __all__.append("PandasSentenceTransformerIndexer")
-    except ImportError:
-        HAS_SENTENCE_TRANSFORMER = False
+# Optional Spark support  
+try:
+    from emm.indexing.spark_cos_sim_matcher import SparkCosSimIndexer
+    from emm.indexing.spark_candidate_selection import SparkCandidateSelectionEstimator
+    from emm.indexing.spark_sni import SparkSortedNeighbourhoodIndexer
+    __all__.extend([
+        "SparkCosSimIndexer",
+        "SparkCandidateSelectionEstimator", 
+        "SparkSortedNeighbourhoodIndexer"
+    ])
+except ImportError:
+    pass

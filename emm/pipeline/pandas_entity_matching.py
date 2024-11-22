@@ -37,8 +37,6 @@ from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
 
-from emm.indexing import HAS_SENTENCE_TRANSFORMER
-
 from emm.loggers import Timer
 from emm.loggers.logger import logger
 from emm.parameters import DEFAULT_CARRY_ON_COLS, MODEL_PARAMS
@@ -124,7 +122,6 @@ class PandasEntityMatching(BaseEntityMatching):
         super().__init__(parameters=parameters, supervised_models=supervised_models)
 
         self.model: TransformerMixin | None = None
-        self.has_sentence_transformer = HAS_SENTENCE_TRANSFORMER
         self.initialize()
 
     def initialize(self):
@@ -139,6 +136,7 @@ class PandasEntityMatching(BaseEntityMatching):
         return PandasPreprocessor(preprocess_pipeline=preprocessor, spark_session=params.get("spark_session"))
 
     def _create_indexers(self) -> list[TransformerMixin]:
+        """Create indexers based on configuration"""
         params = self.parameters
         INDEXER_CLASS = {
             "cosine_similarity": PandasCosSimIndexer,
@@ -148,14 +146,14 @@ class PandasEntityMatching(BaseEntityMatching):
         
         # Check for sentence transformer indexer
         if "sentence_transformer" in [d.get("type") for d in params.get("indexers", [])]:
-            if not HAS_SENTENCE_TRANSFORMER:
+            try:
+                from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+                INDEXER_CLASS["sentence_transformer"] = PandasSentenceTransformerIndexer
+            except ImportError as e:
                 raise ImportError(
                     "Sentence transformer features require additional dependencies. "
                     "Please install with: pip install emm[transformers]"
-                )
-            # Only import when needed and we know dependencies are available
-            from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
-            INDEXER_CLASS["sentence_transformer"] = PandasSentenceTransformerIndexer
+                ) from e
 
         DEFAULT_INDEXER_PARAMS_PANDAS = {
             "cosine_similarity": {
@@ -802,10 +800,12 @@ class PandasEntityMatching(BaseEntityMatching):
         return emobj
 
     def use_sentence_transformer(self, *args, **kwargs):
-        # Only import when this method is called
+        """Add sentence transformer indexer to the pipeline"""
         try:
             from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
-            self._sentence_transformer = PandasSentenceTransformerIndexer(*args, **kwargs)
+            return PandasSentenceTransformerIndexer(*args, **kwargs)
         except ImportError as e:
-            raise ImportError("Sentence transformer features require additional dependencies. "
-                            "Please install with: pip install emm[sentence-transformers]") from e
+            raise ImportError(
+                "Sentence transformer features require additional dependencies. "
+                "Please install with: pip install emm[transformers]"
+            ) from e

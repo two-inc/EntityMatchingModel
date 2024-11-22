@@ -17,26 +17,51 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+"""Supervised models for entity matching.
+
+Core models:
+- PandasSupervisedLayerTransformer: Base supervised model implementation
+
+Optional models:
+- Spark models (requires pyspark):
+  - SparkSupervisedLayerEstimator
+  - SparkSupervisedLayerModel
+- Sentence Transformer models (requires sentence-transformers):
+  - SentenceTransformerLayerTransformer
+"""
+
 from __future__ import annotations
 
 # Core functionality - always available
-from emm.supervised_model.base_supervised_model import BaseSupervisedModel
-from emm.supervised_model.cos_sim_model import CosSimModel
-from emm.supervised_model.xgboost_model import XGBoostModel
+from emm.supervised_model.base_supervised_model import (
+    BaseSupervisedModel,
+    create_new_model_pipeline,
+)
+from emm.supervised_model.pandas_supervised_model import PandasSupervisedLayerTransformer
 
 __all__ = [
-    # Core models
+    # Core models and functions
     "BaseSupervisedModel",
-    "CosSimModel", 
-    "XGBoostModel",
+    "create_new_model_pipeline",
+    "PandasSupervisedLayerTransformer",
 ]
 
-# Feature detection for sentence transformers
-HAS_SENTENCE_TRANSFORMER = False
+# Optional sentence transformer support
 try:
-    import sentence_transformers
     from emm.supervised_model.sentence_transformer_model import SentenceTransformerLayerTransformer
     __all__.append("SentenceTransformerLayerTransformer")
-    HAS_SENTENCE_TRANSFORMER = True
+except ImportError:
+    pass
+
+# Optional Spark support
+try:
+    from emm.supervised_model.spark_supervised_model import (
+        SparkSupervisedLayerEstimator,
+        SparkSupervisedLayerModel,
+    )
+    __all__.extend([
+        "SparkSupervisedLayerEstimator",
+        "SparkSupervisedLayerModel",
+    ])
 except ImportError:
     pass

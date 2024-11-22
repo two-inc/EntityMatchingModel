@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from emm.base.module import Module
 from emm.version import __version__
+from typing import List, Optional, Dict, Any
+import torch
 
 
 class BaseIndexer(Module):
@@ -49,7 +51,7 @@ class BaseIndexer(Module):
 class CosSimBaseIndexer(BaseIndexer):
     """Base implementation of CosSimIndexer class"""
 
-    def __init__(self, num_candidates: int) -> None:
+    def __init__(self, num_candidates: int = 5) -> None:
         super().__init__()
         if num_candidates <= 0:
             msg = "Number of candidates should be a positive integer"
@@ -69,6 +71,26 @@ class CosSimBaseIndexer(BaseIndexer):
         This changes the parameter settings of the fitted model.
         """
         self.num_candidates -= 1
+
+
+class SentenceTransformerBaseIndexer(BaseIndexer):
+    """Base class for sentence transformer based indexers"""
+    def __init__(
+        self,
+        model_name: str = "all-MiniLM-L6-v2",
+        device: Optional[str] = None,
+        batch_size: int = 32,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        encode_kwargs: Optional[Dict[str, Any]] = None,
+        similarity_threshold: float = 0.5,
+    ):
+        super().__init__()
+        self.model_name = model_name
+        self.device = device
+        self.batch_size = batch_size
+        self.model_kwargs = model_kwargs or {}
+        self.encode_kwargs = encode_kwargs or {}
+        self.similarity_threshold = similarity_threshold
 
 
 class SNBaseIndexer(BaseIndexer):

@@ -1,12 +1,4 @@
-"""Tuning functionality for sentence transformers.
-
-This module requires additional dependencies:
-- sentence-transformers
-- lightning
-- wandb
-
-Install with: pip install emm[tuning]
-"""
+"""Tuning functionality for sentence transformers."""
 
 from __future__ import annotations
 
@@ -15,30 +7,9 @@ import logging
 from pathlib import Path
 import numpy as np
 
-# Defer imports until actually needed
-HAS_TUNING_DEPS = False
-try:
-    import torch
-    import lightning as L
-    import wandb
-    from sentence_transformers import SentenceTransformer, losses
-    from torch.utils.data import DataLoader
-    from torch.cuda.amp import GradScaler
-    HAS_TUNING_DEPS = True
-except ImportError:
-    pass
-
 from emm.models.sentence_transformer.tuning.config import TuningConfig
 
 logger = logging.getLogger(__name__)
-
-def check_tuning_dependencies():
-    """Check if tuning dependencies are available"""
-    if not HAS_TUNING_DEPS:
-        raise ImportError(
-            "sentence-transformers, torch, lightning, and wandb are required for tuning. "
-            "Install with: pip install emm[tuning]"
-        )
 
 class SentenceTransformerTuner:
     """Fine-tuning for sentence transformers specialized for company name matching"""
@@ -49,11 +20,33 @@ class SentenceTransformerTuner:
         Args:
             config: Tuning configuration object
         """
-        check_tuning_dependencies()
+        # Import dependencies at initialization time
+        try:
+            import torch
+            import lightning as L
+            import wandb
+            from sentence_transformers import SentenceTransformer, losses
+            from torch.utils.data import DataLoader
+            from torch.cuda.amp import GradScaler
+        except ImportError as e:
+            raise ImportError(
+                "sentence-transformers, torch, lightning, and wandb are required for tuning. "
+                "Install with: pip install emm[tuning]"
+            ) from e
+            
+        # Store imported modules as instance attributes
+        self.torch = torch
+        self.L = L
+        self.wandb = wandb
+        self.SentenceTransformer = SentenceTransformer
+        self.losses = losses
+        self.DataLoader = DataLoader
+        self.GradScaler = GradScaler
+        
         self.config = config
         
         # Setup Lightning Fabric for distributed training
-        self.fabric = L.Fabric(
+        self.fabric = self.L.Fabric(
             accelerator="auto",
             devices=config.device_count,
             precision=config.precision,
@@ -61,14 +54,18 @@ class SentenceTransformerTuner:
         )
         
         # Initialize model with efficient settings
-        self.model = SentenceTransformer(
+        self.model = self.SentenceTransformer(
             config.model_name,
             device=self.fabric.device,
             cache_folder=config.output_path / ".cache" if config.output_path else None
         )
         
         # Setup mixed precision training
-        self.scaler = GradScaler() if config.precision == "16-mixed" else None
+        self.scaler = (
+            self.GradScaler() 
+            if config.precision == "16-mixed" and self.torch.cuda.is_available() 
+            else None
+        )
         
         # Initialize tracking metrics
         self.best_loss = float('inf')
@@ -77,15 +74,15 @@ class SentenceTransformerTuner:
     def _setup_loss(self) -> torch.nn.Module:
         """Initialize loss function with optimizations"""
         if self.config.loss_type == 'dae':
-            return losses.DenoisingAutoEncoderLoss(
+            return self.losses.DenoisingAutoEncoderLoss(
                 self.model,
-                decoder_name_or_path=self.config.model_name,  # Reuse encoder weights
-                tie_encoder_decoder=True  # Memory efficient
+                decoder_name_or_path=self.config.model_name,
+                tie_encoder_decoder=True
             )
         elif self.config.loss_type == 'contrastive':
-            return losses.ContrastiveTensionLoss(
+            return self.losses.ContrastiveTensionLoss(
                 self.model,
-                distance_metric=losses.SiameseDistanceMetric.COSINE_DISTANCE,
+                distance_metric=self.losses.SiameseDistanceMetric.COSINE_DISTANCE,
                 margin=0.5
             )
         elif self.config.loss_type == 'combined':
@@ -98,14 +95,14 @@ class SentenceTransformerTuner:
         class CombinedLoss(torch.nn.Module):
             def __init__(self, model, dae_weight=1.0, contrastive_weight=0.5):
                 super().__init__()
-                self.dae = losses.DenoisingAutoEncoderLoss(
+                self.dae = self.losses.DenoisingAutoEncoderLoss(
                     model,
                     decoder_name_or_path=model.get_config_dict()['model_name'],
                     tie_encoder_decoder=True
                 )
-                self.contrastive = losses.ContrastiveTensionLoss(
+                self.contrastive = self.losses.ContrastiveTensionLoss(
                     model,
-                    distance_metric=losses.SiameseDistanceMetric.COSINE_DISTANCE
+                    distance_metric=self.losses.SiameseDistanceMetric.COSINE_DISTANCE
                 )
                 self.dae_weight = dae_weight
                 self.contrastive_weight = contrastive_weight
@@ -164,7 +161,7 @@ class SentenceTransformerTuner:
     def train(self) -> None:
         """Execute optimized training loop"""
         if self.config.wandb_project and self.fabric.is_global_zero:
-            wandb.init(
+            self.wandb.init(
                 project=self.config.wandb_project,
                 config=self.config.__dict__
             )
@@ -199,7 +196,7 @@ class SentenceTransformerTuner:
                 
                 # Log metrics
                 if self.fabric.is_global_zero and self.config.wandb_project:
-                    wandb.log({
+                    self.wandb.log({
                         "batch_loss": loss.item(),
                         "learning_rate": self.scheduler.get_last_lr()[0],
                         "epoch": epoch,
@@ -215,7 +212,7 @@ class SentenceTransformerTuner:
             # Log epoch metrics
             logger.info(f"Epoch {epoch}: Average loss = {avg_loss:.4f}")
             if self.fabric.is_global_zero and self.config.wandb_project:
-                wandb.log({
+                self.wandb.log({
                     "epoch_loss": avg_loss,
                     "epoch": epoch
                 })

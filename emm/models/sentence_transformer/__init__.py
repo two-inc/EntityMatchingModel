@@ -6,13 +6,16 @@ Install with: pip install emm[transformers]
 
 from __future__ import annotations
 
-from emm.models.sentence_transformer.base import BaseSentenceTransformerComponent
+__all__ = []
 
-__all__ = ["BaseSentenceTransformerComponent"]
+try:
+    from emm.models.sentence_transformer.base import BaseSentenceTransformerComponent
+    __all__.append("BaseSentenceTransformerComponent")
+except ImportError:
+    pass
 
-# Import tuning if available
 try:
     from emm.models.sentence_transformer.tuning import TuningConfig, SentenceTransformerTuner
-    __all__ += ["TuningConfig", "SentenceTransformerTuner"]
+    __all__.extend(["TuningConfig", "SentenceTransformerTuner"])
 except ImportError:
-    pass 
+    pass
