@@ -61,10 +61,9 @@ except ImportError:
 
 # Optional Sentence Transformer support 
 try:
-    import sentence_transformers
     from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
     __all__.extend([
         "PandasSentenceTransformerIndexer"
     ])
 except ImportError:
-    pass
+    pass  # Transformer features unavailable

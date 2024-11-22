@@ -37,27 +37,30 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-spark = [
-  # In NumPy 1.24.0, np.bool has been removed.
-  # https://issues.apache.org/jira/browse/SPARK-41718
-  # 3.4 is needed for python 3.11
-  # https://github.com/apache/spark/pull/38987
-  "pyspark>=3.1; python_version < '3.11'",
-  "numpy<1.24.0",
+transformers = [
+    "sentence-transformers>=2.2.0",
+    "torch>=1.11.0"
 ]
+
+tuning = [
+    "lightning",
+    "wandb",
+    "sentence-transformers>=2.2.0",  # Include transformer deps since tuning requires it
+    "torch>=1.11.0"
+]
+
 dev = [
-  "pre-commit",
-  "gitpython",
-  "nbconvert",
-  "jupyter_client>=5.2.3",
-  "ipykernel>=5.1.3",
-  "matplotlib",
-  "pygments",
-  "pandoc",
-  "pympler",
-  "sentence-transformers>=2.2.0",
-  "torch>=1.11.0"
+    "pre-commit",
+    "gitpython",
+    "nbconvert",
+    "jupyter_client>=5.2.3",
+    "ipykernel>=5.1.3",
+    "matplotlib",
+    "pygments",
+    "pandoc",
+    "pympler"
 ]
+
 test = [
   "pytest",
   "pytest-ordering",
@@ -95,15 +98,6 @@ doc = [
   "pandoc",
   "jupyter_client>=5.2.3",
   "myst_parser"
-]
-
-transformers = [
-  "sentence-transformers",
-]
-
-tuning = [
-  "lightning",
-  "wandb"
 ]
 
 [tool.pytest.ini_options]

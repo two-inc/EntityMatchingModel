@@ -36,7 +36,14 @@ from emm.indexing.pandas_candidate_selection import PandasCandidateSelectionTran
 from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
-from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+
+# Make sentence transformer import optional
+try:
+    from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+    _HAS_SENTENCE_TRANSFORMER = True
+except ImportError:
+    _HAS_SENTENCE_TRANSFORMER = False
+
 from emm.loggers import Timer
 from emm.loggers.logger import logger
 from emm.parameters import DEFAULT_CARRY_ON_COLS, MODEL_PARAMS
