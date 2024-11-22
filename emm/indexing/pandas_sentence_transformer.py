@@ -4,6 +4,7 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
 from sklearn.base import TransformerMixin
+import torch
 
 from emm.indexing.base_indexer import CosSimBaseIndexer
 from emm.helper.blocking_functions import _parse_blocking_func
@@ -24,6 +25,7 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
         model_kwargs: Optional[Dict[str, Any]] = None,
         encode_kwargs: Optional[Dict[str, Any]] = None,
         similarity_threshold: float = 0.5,
+        num_candidates: int = 10,
         **kwargs,
     ) -> None:
         """Initialize sentence transformer indexer
@@ -39,6 +41,7 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
             model_kwargs: Additional kwargs for model initialization (e.g. {'truncate_dim': 384})
             encode_kwargs: Additional kwargs for encoding method
             similarity_threshold: Similarity threshold for filtering matches
+            num_candidates: Number of nearest neighbors to return
             **kwargs: Additional indexer parameters
         """
         check_sentence_transformers_available()
@@ -50,11 +53,11 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
             model_kwargs=model_kwargs,
             encode_kwargs=encode_kwargs
         )
-        CosSimBaseIndexer.__init__(self, **kwargs)
+        CosSimBaseIndexer.__init__(self, num_candidates=num_candidates)
         self.input_col = input_col
         self.blocking_func = _parse_blocking_func(kwargs.get('blocking_func'))
         self.nn = NearestNeighbors(
-            n_neighbors=kwargs.get('num_candidates', 10), 
+            n_neighbors=num_candidates, 
             metric='cosine'
         )
         self.base_embeddings = None
@@ -121,82 +124,117 @@ class PandasSentenceTransformerIndexer(TransformerMixin, CosSimBaseIndexer, Base
             with Timer("SentenceTransformerIndexer.transform") as timer:
                 logger.info(f"Transforming {len(X)} records")
                 
+                # Pre-allocate results list with estimated size
+                est_size = len(X) * self.num_candidates
                 results = []
+                results.reserve(est_size)  # Pre-allocate memory
                 
                 if self.blocking_func is not None:
+                    # Process in blocks to reduce memory usage
                     blocks = X[self.input_col].map(self.blocking_func)
+                    
                     for block in blocks.unique():
                         if block not in self.base_embeddings:
                             continue
                             
-                        block_embeddings = self.encode_texts(
-                            X[blocks == block][self.input_col].tolist(),
+                        block_mask = blocks == block
+                        block_texts = X[block_mask][self.input_col].tolist()
+                        
+                        # Use efficient encoding with mixed precision
+                        with torch.cuda.amp.autocast(enabled=self.use_mixed_precision):
+                            block_embeddings = self.encode_texts(block_texts)
+                        
+                        # Calculate similarities efficiently
+                        similarities = self.calculate_pairwise_cosine_similarity(
+                            block_embeddings,
+                            self.base_embeddings[block],
+                            batch_size=self.batch_size
                         )
                         
-                        distances, indices = self.nn.kneighbors(block_embeddings)
-                        similarities = 1 - distances
+                        # Get top k efficiently using numpy
+                        top_k_indices = np.argpartition(-similarities, 
+                                                      self.num_candidates-1, 
+                                                      axis=1)[:,:self.num_candidates]
+                        top_k_similarities = np.take_along_axis(similarities, top_k_indices, axis=1)
                         
+                        # Process matches efficiently
                         block_results = self._process_matches(
-                            similarities,
-                            indices,
-                            X[blocks == block].index,
+                            top_k_similarities,
+                            top_k_indices,
+                            X[block_mask].index,
                             self.base_indices[block]
                         )
                         results.extend(block_results)
                         
-                        # Clean up memory after each block
-                        del block_embeddings
+                        # Clean up memory
+                        del block_embeddings, similarities, top_k_indices, top_k_similarities
                         if self.device.type == 'cuda':
                             torch.cuda.empty_cache()
                 else:
+                    # Process all records at once with batching
                     query_embeddings = self.encode_texts(
                         X[self.input_col].tolist(),
                     )
                     
-                    distances, indices = self.nn.kneighbors(query_embeddings)
-                    similarities = 1 - distances
+                    # Use efficient batch-wise similarity calculation
+                    similarities = self.calculate_pairwise_cosine_similarity(
+                        query_embeddings,
+                        self.base_embeddings,
+                        batch_size=self.batch_size
+                    )
+                    
+                    # Get top k efficiently
+                    top_k_indices = np.argpartition(-similarities, 
+                                                  self.num_candidates-1, 
+                                                  axis=1)[:,:self.num_candidates]
+                    top_k_similarities = np.take_along_axis(similarities, top_k_indices, axis=1)
                     
                     results = self._process_matches(
-                        similarities,
-                        indices,
+                        top_k_similarities,
+                        top_k_indices,
                         X.index,
                         self.base_indices
                     )
                     
                     # Clean up memory
-                    del query_embeddings
+                    del query_embeddings, similarities, top_k_indices, top_k_similarities
                     if self.device.type == 'cuda':
                         torch.cuda.empty_cache()
-                    
+                
+                # Create DataFrame efficiently
                 candidates = pd.DataFrame(results)
                 if len(candidates) == 0:
                     candidates = pd.DataFrame(columns=['uid', 'gt_uid', 'score', 'rank'])
-                    
-                # Sort and rank within groups like other indexers
+                
+                # Optimize sorting and ranking
                 candidates = candidates.sort_values(['uid', 'score'], ascending=[True, False])
-                gb = candidates.groupby('uid')
-                candidates['rank'] = gb['score'].transform(lambda x: range(1, len(x) + 1))
+                candidates['rank'] = candidates.groupby('uid').cumcount() + 1
                 
                 if multiple_indexers:
                     candidates[self.column_prefix()] = 1
-                    
+                
+                # Efficient column operations
                 if self.carry_on_cols:
-                    for col in self.carry_on_cols:
-                        if col in X.columns:
-                            candidates[col] = X[col]
-                            
+                    candidates = candidates.merge(
+                        X[['uid'] + self.carry_on_cols], 
+                        on='uid',
+                        how='left'
+                    )
+                
+                # Rename columns efficiently
                 candidates = candidates.rename(columns={
                     'score': f'score_{self.column_prefix()}',
                     'rank': f'rank_{self.column_prefix()}'
                 })
                 
-                candidates = candidates[candidates["similarity_score"] >= self.similarity_threshold]
+                # Filter by threshold
+                candidates = candidates[candidates[f"score_{self.column_prefix()}"] >= self.similarity_threshold]
                 
                 logger.info(f"Generated {len(candidates)} candidates")
                 return candidates
 
         finally:
-            # Ensure memory is cleaned up even if an error occurs
+            # Ensure memory cleanup
             if self.device.type == 'cuda':
                 torch.cuda.empty_cache()
 

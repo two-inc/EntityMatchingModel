@@ -155,7 +155,7 @@ class PandasEntityMatching(BaseEntityMatching):
                 "input_col": "preprocessed",
                 "model_name": "all-MiniLM-L6-v2",
                 "num_candidates": 10,
-                "cos_sim_lower_bound": 0.5,
+                "similarity_threshold": 0.5,
                 "batch_size": 32
             }
         }

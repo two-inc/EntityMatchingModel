@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import List, Dict, Optional, Union, Any
+from typing import List, Dict, Optional, Any, Tuple
 import torch
 import numpy as np
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer, util, SimilarityFunction
+from functools import lru_cache
 
 # Single numpy typing import with fallback
 try:
@@ -35,6 +36,8 @@ class BaseSentenceTransformerComponent:
         batch_size: Optional[int] = None,
         model_kwargs: Optional[Dict[str, Any]] = None,
         encode_kwargs: Optional[Dict[str, Any]] = None,
+        cache_size: int = 10000,
+        use_mixed_precision: bool = True,
     ) -> None:
         """Initialize the base sentence transformer component.
         
@@ -77,71 +80,202 @@ class BaseSentenceTransformerComponent:
         self.model = SentenceTransformer(model_name, device=self.device, **self.model_kwargs)
         self.model_name = model_name
         self.similarity_threshold = similarity_threshold
+        
+        # Setup caching for frequently accessed texts
+        self._setup_cache(cache_size)
+        
+        # Use dot product for normalized embeddings
+        self.model_kwargs.setdefault('similarity_fn_name', SimilarityFunction.DOT_PRODUCT)
+        # Enable normalization during encoding
+        self.encode_kwargs.setdefault('normalize_embeddings', True)
+        
+        self.use_mixed_precision = use_mixed_precision and torch.cuda.is_available()
+        if self.use_mixed_precision:
+            self.scaler = torch.cuda.amp.GradScaler()
+
+    def _setup_cache(self, cache_size: int) -> None:
+        """Setup caching for embeddings"""
+        @lru_cache(maxsize=cache_size)
+        def cached_encode(text: str) -> Tuple[float, ...]:
+            # Convert single text to embedding and cache as tuple
+            embedding = self.model.encode(
+                [text],
+                batch_size=1,
+                show_progress_bar=False,
+                convert_to_tensor=True,
+                **self.encode_kwargs
+            )
+            return tuple(embedding.cpu().numpy().flatten())
+            
+        self._cached_encode = cached_encode
 
     def encode_texts(self, texts: List[str]) -> NDArray[np.float32]:
-        """Encode a list of texts into embeddings.
-        
-        This method handles batching and device management automatically.
-        
-        Args:
-            texts: List of strings to encode
-            
-        Returns:
-            Array of embeddings with shape (len(texts), embedding_dim)
-            
-        Note:
-            The returned embeddings are always on CPU and in numpy format
-            for compatibility with scikit-learn and other tools.
-        """
-        embeddings = self.model.encode(
-            texts,
-            batch_size=self.batch_size,
+        """Encode with optional mixed precision"""
+        if len(texts) == 1:
+            return np.array([self._cached_encode(texts[0])])
+
+        first_encoding = self.model.encode(
+            [texts[0]], 
+            batch_size=1,
             show_progress_bar=False,
             convert_to_tensor=True,
             **self.encode_kwargs
         )
-        return embeddings.cpu().numpy()
+        
+        embedding_dim = first_encoding.shape[1]
+        output = np.zeros((len(texts), embedding_dim), dtype=np.float32)
+        output[0] = first_encoding.cpu().numpy()
+
+        for i in range(0, len(texts), self.batch_size):
+            batch_texts = texts[i:i + self.batch_size]
+            
+            if self.use_mixed_precision:
+                with torch.cuda.amp.autocast():
+                    with torch.inference_mode():
+                        embeddings = self.model.encode(
+                            batch_texts,
+                            batch_size=self.batch_size,
+                            show_progress_bar=False,
+                            convert_to_tensor=True,
+                            **self.encode_kwargs
+                        )
+            else:
+                with torch.inference_mode():
+                    embeddings = self.model.encode(
+                        batch_texts,
+                        batch_size=self.batch_size,
+                        show_progress_bar=False,
+                        convert_to_tensor=True,
+                        **self.encode_kwargs
+                    )
+                    
+            output[i:i + len(batch_texts)] = embeddings.cpu().numpy()
+            self._cleanup_gpu_tensors([embeddings])
+
+        return output
+
+    @property
+    def cache_info(self) -> Dict[str, Any]:
+        """Get cache statistics"""
+        info = self._cached_encode.cache_info()
+        return {
+            'hits': info.hits,
+            'misses': info.misses,
+            'size': info.currsize,
+            'maxsize': info.maxsize
+        }
+
+    def clear_cache(self) -> None:
+        """Clear the embedding cache"""
+        self._cached_encode.cache_clear()
 
     def calculate_cosine_similarity(
         self, 
         embeddings1: NDArray[np.float32], 
         embeddings2: NDArray[np.float32]
     ) -> NDArray[np.float32]:
-        """Calculate cosine similarity between two sets of embeddings.
-        
-        Args:
-            embeddings1: First set of embeddings with shape (n_samples, embedding_dim)
-            embeddings2: Second set of embeddings with shape (n_samples, embedding_dim)
-            
-        Returns:
-            Array of cosine similarities with shape (n_samples,)
-            
-        Raises:
-            ValueError: If embeddings have different shapes or unexpected dimensions
-        """
+        """Calculate cosine similarity between two sets of embeddings efficiently."""
         if embeddings1.shape != embeddings2.shape:
             raise ValueError(
                 f"Embedding shapes must match: {embeddings1.shape} != {embeddings2.shape}"
             )
         
-        # Convert to PyTorch tensors and move to correct device
-        emb1 = torch.from_numpy(embeddings1).to(self.device)
-        emb2 = torch.from_numpy(embeddings2).to(self.device)
+        # Convert and normalize on CPU first if possible
+        emb1 = torch.from_numpy(embeddings1)
+        emb2 = torch.from_numpy(embeddings2)
+        
+        # Normalize on CPU to reduce GPU memory transfer
+        emb1 = torch.nn.functional.normalize(emb1, p=2, dim=1)
+        emb2 = torch.nn.functional.normalize(emb2, p=2, dim=1)
+        
+        # Move to device after normalization
+        emb1 = emb1.to(self.device)
+        emb2 = emb2.to(self.device)
         
         try:
-            # Use sentence-transformers built-in cosine similarity
-            similarities = util.cos_sim(emb1, emb2)
-            # Extract diagonal for pairwise similarities
-            result = similarities.diagonal().cpu().numpy()
-            return result
-        
+            with torch.inference_mode():
+                similarities = util.cos_sim(emb1, emb2)
+                result = similarities.diagonal().cpu().numpy()
+                return result
         finally:
-            # Clean up GPU memory
-            if self.device.type == 'cuda':
-                del emb1, emb2, similarities
-                torch.cuda.empty_cache()
+            self._cleanup_gpu_tensors([emb1, emb2, similarities])
+
+    def calculate_pairwise_cosine_similarity(
+        self,
+        embeddings1: NDArray[np.float32],
+        embeddings2: NDArray[np.float32],
+        batch_size: Optional[int] = None
+    ) -> NDArray[np.float32]:
+        """Calculate pairwise cosine similarity with memory-efficient batching."""
+        if embeddings1.shape[1] != embeddings2.shape[1]:
+            raise ValueError(
+                f"Embedding dimensions must match: {embeddings1.shape[1]} != {embeddings2.shape[1]}"
+            )
+        
+        # Use instance batch size if none provided
+        batch_size = batch_size or self.batch_size
+        
+        # Pre-allocate output array
+        n_samples1, n_samples2 = len(embeddings1), len(embeddings2)
+        output = np.zeros((n_samples1, n_samples2), dtype=np.float32)
+        
+        # Convert and normalize embeddings2 once (it's used for all batches)
+        emb2 = torch.from_numpy(embeddings2)
+        emb2 = torch.nn.functional.normalize(emb2, p=2, dim=1)
+        emb2 = emb2.to(self.device)
+        
+        try:
+            for i in range(0, n_samples1, batch_size):
+                batch_emb1 = torch.from_numpy(embeddings1[i:i + batch_size])
+                batch_emb1 = torch.nn.functional.normalize(batch_emb1, p=2, dim=1)
+                batch_emb1 = batch_emb1.to(self.device)
+                
+                with torch.inference_mode():
+                    batch_similarities = util.cos_sim(batch_emb1, emb2)
+                    output[i:i + batch_size] = batch_similarities.cpu().numpy()
+                
+                self._cleanup_gpu_tensors([batch_emb1, batch_similarities])
+                
+            return output
+        finally:
+            self._cleanup_gpu_tensors([emb2])
+
+    def _cleanup_gpu_tensors(self, tensors: List[torch.Tensor]) -> None:
+        """Helper method to clean up GPU tensors."""
+        if self.device.type == 'cuda':
+            for tensor in tensors:
+                if tensor is not None and tensor.is_cuda:
+                    del tensor
+            torch.cuda.empty_cache()
+
+    @property
+    def embedding_dimension(self) -> int:
+        """Get the embedding dimension of the model."""
+        return self.model.get_sentence_embedding_dimension()
+
+    def __len__(self) -> int:
+        """Return the embedding dimension of the model."""
+        return self.embedding_dimension
 
     def clear_gpu_memory(self) -> None:
         """Clear GPU memory cache if using CUDA device."""
         if self.device.type == 'cuda':
-            torch.cuda.empty_cache() 
+            torch.cuda.empty_cache()
+
+    def quantize(self, quantization_type: str = 'fp16') -> None:
+        """Quantize model for production deployment
+        
+        Args:
+            quantization_type: Type of quantization ('fp16' or 'int8')
+        """
+        if quantization_type == 'fp16':
+            self.model.half()
+        elif quantization_type == 'int8':
+            from torch.quantization import quantize_dynamic
+            self.model = quantize_dynamic(
+                self.model,
+                {torch.nn.Linear},
+                dtype=torch.qint8
+            )
+        else:
+            raise ValueError(f"Unsupported quantization type: {quantization_type}")

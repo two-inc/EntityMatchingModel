@@ -99,14 +99,7 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
         self.fit(X, y)
 
     def calc_score(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Calculate similarity scores using the sentence transformer model.
-
-        Args:
-            X: DataFrame containing name pairs to score
-        
-        Returns:
-            DataFrame with added similarity scores
-        """
+        """Calculate similarity scores using the sentence transformer model."""
         logger.info(f"Calculating similarity scores using {self.model_name}")
         
         i_to_score = X["gt_uid"].notna()
@@ -116,20 +109,24 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
 
         df_to_score = X[i_to_score]
         
-        # Calculate embeddings in batches with any extra encode kwargs
-        name1_embeddings = self.encode_texts(df_to_score["name"].tolist())
-        name2_embeddings = self.encode_texts(df_to_score["gt_name"].tolist())
+        try:
+            # Use mixed precision for encoding
+            with torch.cuda.amp.autocast(enabled=self.use_mixed_precision):
+                # Calculate embeddings efficiently in batches
+                name1_embeddings = self.encode_texts(df_to_score["name"].tolist())
+                name2_embeddings = self.encode_texts(df_to_score["gt_name"].tolist())
 
-        # Calculate cosine similarities
-        similarities = self.calculate_cosine_similarity(name1_embeddings, name2_embeddings)
-        
-        # Convert to numpy and flatten
-        scores = similarities.diagonal().cpu().numpy()
-        
-        # Assign scores back to DataFrame
-        X.loc[i_to_score, self.score_col] = scores
+            # Use optimized cosine similarity calculation
+            scores = self.calculate_cosine_similarity(name1_embeddings, name2_embeddings)
+            
+            # Efficient assignment back to DataFrame
+            X.loc[i_to_score, self.score_col] = scores
 
-        return X
+            return X
+        finally:
+            # Ensure cleanup
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
 
     def select_best_score(
         self,
@@ -197,28 +194,33 @@ class SentenceTransformerLayerTransformer(TransformerMixin, BaseSupervisedModel,
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Calculate probability scores for name pairs."""
-        # Handle cases where either name or gt_name is NaN
+        # Efficient mask calculation
         valid_mask = X["name"].notna() & X["gt_name"].notna()
         n_samples = len(X)
         
         if not valid_mask.any():
-            # If no valid pairs, return zero scores
             return np.zeros((n_samples, 2))
-            
-        # Calculate similarity scores only for valid pairs
-        name1_embeddings = self.encode_texts(X.loc[valid_mask, "name"].tolist())
-        name2_embeddings = self.encode_texts(X.loc[valid_mask, "gt_name"].tolist())
+        
+        try:
+            # Use mixed precision for encoding
+            with torch.cuda.amp.autocast(enabled=self.use_mixed_precision):
+                # Calculate embeddings efficiently in batches
+                name1_embeddings = self.encode_texts(X.loc[valid_mask, "name"].tolist())
+                name2_embeddings = self.encode_texts(X.loc[valid_mask, "gt_name"].tolist())
 
-        # Calculate cosine similarities
-        similarities = util.cos_sim(name1_embeddings, name2_embeddings)
-        scores = similarities.diagonal().cpu().numpy()
-        
-        # Clear GPU memory
-        del name1_embeddings, name2_embeddings, similarities
-        torch.cuda.empty_cache()
-        
-        # Create full results array with zeros for invalid pairs
-        full_scores = np.zeros(n_samples)
-        full_scores[valid_mask] = scores
-        
-        return np.vstack([(1 - full_scores), full_scores]).T
+            # Calculate similarities efficiently
+            similarities = util.cos_sim(
+                torch.from_numpy(name1_embeddings).to(self.device),
+                torch.from_numpy(name2_embeddings).to(self.device)
+            )
+            scores = similarities.diagonal().cpu().numpy()
+            
+            # Efficient array operations
+            full_scores = np.zeros(n_samples)
+            full_scores[valid_mask] = scores
+            
+            return np.vstack([(1 - full_scores), full_scores]).T
+        finally:
+            # Clean up GPU memory
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
