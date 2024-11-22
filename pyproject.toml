@@ -43,10 +43,10 @@ transformers = [
 ]
 
 tuning = [
-    "lightning",
-    "wandb",
     "sentence-transformers>=2.2.0",  # Include transformer deps since tuning requires it
-    "torch>=1.11.0"
+    "torch>=1.11.0",
+    "lightning",
+    "wandb"
 ]
 
 dev = [

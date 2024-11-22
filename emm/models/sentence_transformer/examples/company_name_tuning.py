@@ -1,7 +1,22 @@
+"""Example of company name tuning with sentence transformers.
+
+This example requires the full tuning dependencies.
+Install with: pip install emm[tuning]
+"""
+
 from pathlib import Path
 from typing import List
-import torch
-from torch.utils.data import Dataset, DataLoader
+
+# Check required dependencies at import time
+try:
+    import torch
+    from torch.utils.data import Dataset, DataLoader
+except ImportError as e:
+    raise ImportError(
+        "This example requires sentence-transformers and tuning dependencies. "
+        "Install with: pip install emm[tuning]"
+    ) from e
+
 from emm.models.sentence_transformer.tuning import SentenceTransformerTuner, TuningConfig
 
 class CompanyNameDataset(Dataset):

@@ -37,12 +37,7 @@ from emm.indexing.pandas_cos_sim_matcher import PandasCosSimIndexer
 from emm.indexing.pandas_naive_indexer import PandasNaiveIndexer
 from emm.indexing.pandas_sni import PandasSortedNeighbourhoodIndexer
 
-# Make sentence transformer import optional
-try:
-    from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
-    _HAS_SENTENCE_TRANSFORMER = True
-except ImportError:
-    _HAS_SENTENCE_TRANSFORMER = False
+from emm.indexing import HAS_SENTENCE_TRANSFORMER
 
 from emm.loggers import Timer
 from emm.loggers.logger import logger
@@ -129,6 +124,7 @@ class PandasEntityMatching(BaseEntityMatching):
         super().__init__(parameters=parameters, supervised_models=supervised_models)
 
         self.model: TransformerMixin | None = None
+        self.has_sentence_transformer = HAS_SENTENCE_TRANSFORMER
         self.initialize()
 
     def initialize(self):
@@ -148,8 +144,19 @@ class PandasEntityMatching(BaseEntityMatching):
             "cosine_similarity": PandasCosSimIndexer,
             "sni": PandasSortedNeighbourhoodIndexer,
             "naive": PandasNaiveIndexer,
-            "sentence_transformer": PandasSentenceTransformerIndexer,
         }
+        
+        # Check for sentence transformer indexer
+        if "sentence_transformer" in [d.get("type") for d in params.get("indexers", [])]:
+            if not HAS_SENTENCE_TRANSFORMER:
+                raise ImportError(
+                    "Sentence transformer features require additional dependencies. "
+                    "Please install with: pip install emm[transformers]"
+                )
+            # Only import when needed and we know dependencies are available
+            from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+            INDEXER_CLASS["sentence_transformer"] = PandasSentenceTransformerIndexer
+
         DEFAULT_INDEXER_PARAMS_PANDAS = {
             "cosine_similarity": {
                 "input_col": "preprocessed",
@@ -793,3 +800,12 @@ class PandasEntityMatching(BaseEntityMatching):
         emobj.parameters.update(override_parameters)
 
         return emobj
+
+    def use_sentence_transformer(self, *args, **kwargs):
+        # Only import when this method is called
+        try:
+            from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+            self._sentence_transformer = PandasSentenceTransformerIndexer(*args, **kwargs)
+        except ImportError as e:
+            raise ImportError("Sentence transformer features require additional dependencies. "
+                            "Please install with: pip install emm[sentence-transformers]") from e

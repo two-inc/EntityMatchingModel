@@ -1,7 +1,18 @@
-"""Example script demonstrating entity matching using sentence transformers for indexing."""
+"""Example of entity matching using sentence transformers for indexing.
 
-import pandas as pd
-from emm import PandasEntityMatching
+This example requires sentence-transformers.
+Install with: pip install emm[transformers]
+"""
+
+# Check required dependencies at import time
+try:
+    import pandas as pd
+    from emm import PandasEntityMatching
+except ImportError as e:
+    raise ImportError(
+        "This example requires sentence-transformers. "
+        "Install with: pip install emm[transformers]"
+    ) from e
 
 def main():
     # Create sample ground truth data

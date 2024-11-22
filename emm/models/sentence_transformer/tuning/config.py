@@ -1,6 +1,24 @@
+"""Configuration for sentence transformer tuning.
+
+This module requires lightning and wandb.
+Install with: pip install emm[tuning]
+"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+# Check required dependencies at import time
+try:
+    import lightning
+    import wandb
+except ImportError as e:
+    raise ImportError(
+        "lightning and wandb are required for tuning functionality. "
+        "Install with: pip install emm[tuning]"
+    ) from e
 
 @dataclass
 class TuningConfig:

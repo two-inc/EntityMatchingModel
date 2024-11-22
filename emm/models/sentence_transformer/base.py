@@ -1,10 +1,28 @@
+"""Base sentence transformer component for entity matching.
+
+This module requires sentence-transformers and torch.
+Install with: pip install emm[transformers]
+"""
+
 from __future__ import annotations
 
 from typing import List, Dict, Optional, Any, Tuple
-import torch
-import numpy as np
-from sentence_transformers import SentenceTransformer, util, SimilarityFunction
+import logging
+
+# Check required dependencies at import time
+try:
+    import torch
+    import sentence_transformers
+    from sentence_transformers import SentenceTransformer, util, SimilarityFunction
+except ImportError as e:
+    raise ImportError(
+        "sentence-transformers and torch are required for this module. "
+        "Install with: pip install emm[transformers]"
+    ) from e
+
+# Rest of imports
 from functools import lru_cache
+import numpy as np
 
 # Single numpy typing import with fallback
 try:
@@ -12,6 +30,8 @@ try:
 except ImportError:
     from typing import Any
     NDArray = Any
+
+logger = logging.getLogger(__name__)
 
 class BaseSentenceTransformerComponent:
     """Base component for sentence transformer functionality in EMM.

@@ -45,25 +45,18 @@ __all__ = [
     "PandasSortedNeighbourhoodIndexer",
 ]
 
-# Optional Spark support
+# Feature detection for sentence transformers
+HAS_SENTENCE_TRANSFORMER = False
 try:
-    import pyspark
-    from emm.indexing.spark_cos_sim_matcher import SparkCosSimIndexer
-    from emm.indexing.spark_candidate_selection import SparkCandidateSelectionEstimator
-    from emm.indexing.spark_sni import SparkSortedNeighbourhoodIndexer
-    __all__.extend([
-        "SparkCosSimIndexer",
-        "SparkCandidateSelectionEstimator", 
-        "SparkSortedNeighbourhoodIndexer"
-    ])
+    import sentence_transformers
+    HAS_SENTENCE_TRANSFORMER = True
 except ImportError:
     pass
 
-# Optional Sentence Transformer support 
-try:
-    from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
-    __all__.extend([
-        "PandasSentenceTransformerIndexer"
-    ])
-except ImportError:
-    pass  # Transformer features unavailable
+# Only import if dependencies are available
+if HAS_SENTENCE_TRANSFORMER:
+    try:
+        from emm.indexing.pandas_sentence_transformer import PandasSentenceTransformerIndexer
+        __all__.append("PandasSentenceTransformerIndexer")
+    except ImportError:
+        HAS_SENTENCE_TRANSFORMER = False

@@ -31,13 +31,12 @@ __all__ = [
     "XGBoostModel",
 ]
 
-# Optional Sentence Transformer support
+# Feature detection for sentence transformers
+HAS_SENTENCE_TRANSFORMER = False
 try:
-    from sentence_transformers import SentenceTransformer
+    import sentence_transformers
     from emm.supervised_model.sentence_transformer_model import SentenceTransformerLayerTransformer
-    __all__.extend([
-        # Sentence transformer models
-        "SentenceTransformerLayerTransformer"
-    ])
+    __all__.append("SentenceTransformerLayerTransformer")
+    HAS_SENTENCE_TRANSFORMER = True
 except ImportError:
     pass

@@ -1,19 +1,44 @@
+"""Tuning functionality for sentence transformers.
+
+This module requires additional dependencies:
+- sentence-transformers
+- lightning
+- wandb
+
+Install with: pip install emm[tuning]
+"""
+
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, List
 import logging
-import lightning as L
-from sentence_transformers import SentenceTransformer, losses
-import torch
-import wandb
 from pathlib import Path
-from torch.utils.data import DataLoader
-from torch.cuda.amp import GradScaler
 import numpy as np
+
+# Defer imports until actually needed
+HAS_TUNING_DEPS = False
+try:
+    import torch
+    import lightning as L
+    import wandb
+    from sentence_transformers import SentenceTransformer, losses
+    from torch.utils.data import DataLoader
+    from torch.cuda.amp import GradScaler
+    HAS_TUNING_DEPS = True
+except ImportError:
+    pass
 
 from emm.models.sentence_transformer.tuning.config import TuningConfig
 
 logger = logging.getLogger(__name__)
+
+def check_tuning_dependencies():
+    """Check if tuning dependencies are available"""
+    if not HAS_TUNING_DEPS:
+        raise ImportError(
+            "sentence-transformers, torch, lightning, and wandb are required for tuning. "
+            "Install with: pip install emm[tuning]"
+        )
 
 class SentenceTransformerTuner:
     """Fine-tuning for sentence transformers specialized for company name matching"""
@@ -24,6 +49,7 @@ class SentenceTransformerTuner:
         Args:
             config: Tuning configuration object
         """
+        check_tuning_dependencies()
         self.config = config
         
         # Setup Lightning Fabric for distributed training

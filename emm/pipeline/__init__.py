@@ -17,12 +17,24 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from emm.helper import spark_installed
+"""Pipeline implementations for entity matching.
+
+Core pipeline:
+- PandasEntityMatching: Pipeline using pandas DataFrames
+
+Optional pipelines:
+- SparkEntityMatching (requires pyspark)
+"""
+
+from __future__ import annotations
+
 from emm.pipeline.pandas_entity_matching import PandasEntityMatching
 
 __all__ = ["PandasEntityMatching"]
 
-if spark_installed:
+# Optional Spark support
+try:
     from emm.pipeline.spark_entity_matching import SparkEntityMatching
-
-    __all__ += ["SparkEntityMatching"]
+    __all__.append("SparkEntityMatching")
+except ImportError:
+    pass

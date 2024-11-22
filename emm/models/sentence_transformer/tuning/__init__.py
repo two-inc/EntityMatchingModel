@@ -1,7 +1,11 @@
 """Model tuning functionality for sentence transformers.
 
-Note: This module assumes lightning and wandb are installed.
-Import checks are handled at the package level in emm.models.__init__.py
+This module requires additional dependencies:
+- sentence-transformers
+- lightning 
+- wandb
+
+Install with: pip install emm[tuning]
 """
 
 from __future__ import annotations
